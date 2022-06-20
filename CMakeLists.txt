@@ -14,8 +14,12 @@ pico_sdk_init()
 
 # Tell CMake where to find the executable source file
 add_executable(${PROJECT_NAME}
-    main.c
+    main.cpp
 )
+
+# Add Libs (as subdir)
+add_subdirectory(lib/pico-onewire)
+
 
 # Create map/bin/hex/uf2 files
 pico_add_extra_outputs(${PROJECT_NAME})
@@ -23,5 +27,9 @@ pico_add_extra_outputs(${PROJECT_NAME})
 # Link to pico_stdlib (gpio, time, etc. functions) ==> s. #includes
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib
+    pico_one_wire
 )
 
+# for printf debugging over USB
+pico_enable_stdio_usb(${PROJECT_NAME} 1)
+pico_enable_stdio_uart(${PROJECT_NAME} 0)

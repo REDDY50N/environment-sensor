@@ -1,6 +1,7 @@
 # Folders
-tmp/*
+tmp/
 build/*
+.vscode
 
 
 
