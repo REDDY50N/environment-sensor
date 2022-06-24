@@ -28,6 +28,7 @@ pico_add_extra_outputs(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib
     pico_one_wire
+    hardware_i2c
 )
 
 # for printf debugging over USB

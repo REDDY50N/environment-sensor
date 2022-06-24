@@ -1,3 +1,0 @@
-[submodule "lib/pico-onewire"]
-	path = lib/pico-onewire
-	url = https://github.com/adamboardman/pico-onewire.git
