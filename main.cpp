@@ -12,8 +12,9 @@
 #include "hardware/i2c.h"   // BME280
 
 // External HW Libs
-#include "lib/pico-onewire/api/one_wire.h"      
-#include "lib/bme280/bme280.h"                  // Bosch-API: https://github.com/BoschSensortec/BME280_driver
+#include "lib/pico-onewire/api/one_wire.h"
+#include "lib/bmp280_i2c/bmp280_i2c.h"      
+//#include "lib/bme280/bme280.h"                  // Bosch-API: https://github.com/BoschSensortec/BME280_driver
 
 
 // ==============================================
@@ -36,122 +37,6 @@ void blink()
 
 
 
-// ==============================================
-// BME280
-// ==============================================
-
-// Prototypes
-void print_sensor_data(struct bme280_data *comp_data);
-
-
-struct bme280_  dev dev;
-int8_t rslt = BME280_OK;
-uint8_t dev_addr = BME280_I2C_ADDR_PRIM;
-
- void user_delay_ms(uint32_t period, void *intf_ptr)
-{
-    /*
-     * Return control or wait,
-     * for a period amount of milliseconds
-     */
-}
-
-
-int8_t user_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr)
-{
-    int8_t rslt = 0; /* Return 0 for Success, non-zero for failure */
-
-    /*
-     * The parameter intf_ptr can be used as a variable to store the I2C address of the device
-     */
-
-    /*
-     * Data on the bus should be like
-     * |------------+---------------------|
-     * | I2C action | Data                |
-     * |------------+---------------------|
-     * | Start      | -                   |
-     * | Write      | (reg_addr)          |
-     * | Stop       | -                   |
-     * | Start      | -                   |
-     * | Read       | (reg_data[0])       |
-     * | Read       | (....)              |
-     * | Read       | (reg_data[len - 1]) |
-     * | Stop       | -                   |
-     * |------------+---------------------|
-     */
-
-    return rslt;
-}
-
-int8_t user_i2c_write(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr)
-{
-    int8_t rslt = 0; /* Return 0 for Success, non-zero for failure */
-
-    /*
-     * The parameter intf_ptr can be used as a variable to store the I2C address of the device
-     */
-
-    /*
-     * Data on the bus should be like
-     * |------------+---------------------|
-     * | I2C action | Data                |
-     * |------------+---------------------|
-     * | Start      | -                   |
-     * | Write      | (reg_addr)          |
-     * | Write      | (reg_data[0])       |
-     * | Write      | (....)              |
-     * | Write      | (reg_data[len - 1]) |
-     * | Stop       | -                   |
-     * |------------+---------------------|
-     */
-
-    return rslt;
-}
-
-int8_t stream_sensor_data_normal_mode(struct bme280_dev *dev)
-{
-	int8_t rslt;
-	uint8_t settings_sel;
-	struct bme280_data comp_data;
-
-	/* Recommended mode of operation: Indoor navigation */
-	dev->settings.osr_h = BME280_OVERSAMPLING_1X;
-	dev->settings.osr_p = BME280_OVERSAMPLING_16X;
-	dev->settings.osr_t = BME280_OVERSAMPLING_2X;
-	dev->settings.filter = BME280_FILTER_COEFF_16;
-	dev->settings.standby_time = BME280_STANDBY_TIME_62_5_MS;
-
-	settings_sel = BME280_OSR_PRESS_SEL;
-	settings_sel |= BME280_OSR_TEMP_SEL;
-	settings_sel |= BME280_OSR_HUM_SEL;
-	settings_sel |= BME280_STANDBY_SEL;
-	settings_sel |= BME280_FILTER_SEL;
-	rslt = bme280_set_sensor_settings(settings_sel, dev);
-	rslt = bme280_set_sensor_mode(BME280_NORMAL_MODE, dev);
-
-	printf("Temperature, Pressure, Humidity\r\n");
-	while (1) 
-    {
-		/* Delay while the sensor completes a measurement */
-		dev->delay_us(70, dev->intf_ptr);
-		rslt = bme280_get_sensor_data(BME280_ALL, &comp_data, dev);
-		print_sensor_data(&comp_data);
-	}
-
-	return rslt;
-}
-
-void print_sensor_data(struct bme280_data *comp_data)
-{
-#ifdef BME280_FLOAT_ENABLE
-        printf("%0.2f, %0.2f, %0.2f\r\n",comp_data->temperature, comp_data->pressure, comp_data->humidity);
-#else
-        printf("%ld, %ld, %ld\r\n",comp_data->temperature, comp_data->pressure, comp_data->humidity);
-#endif
-}
-
-
 
 
 // ==============================================
@@ -161,9 +46,9 @@ void print_sensor_data(struct bme280_data *comp_data)
 
 int main()
 {
+    // init UART for printf debugging
+    stdio_init_all();
 
-
-    
     // initialize LED Pin
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
@@ -172,24 +57,47 @@ int main()
     //stdio_init_all();
     //gpio_init(DHT_PIN);
 
-    stdio_init_all();
+    // DS18B20
     One_wire one_wire(10); //GP10 (s. Pico board on back)
     one_wire.init();
     rom_address_t address{};
+
+
+
+#if !defined(i2c_default) || !defined(PICO_DEFAULT_I2C_SDA_PIN) || !defined(PICO_DEFAULT_I2C_SCL_PIN)
+    #warning i2c / bmp280_i2c example requires a board with I2C pins
+        puts("Default I2C pins were not defined");
+#else
+    // useful information for picotool
+    bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
+    bi_decl(bi_program_description("BMP280 I2C example for the Raspberry Pi Pico"));
+
+    printf("Hello, BMP280! Reading temperaure and pressure values from sensor...\n");
+
+    // I2C is "open drain", pull ups to keep signal high when no data is being sent
+    i2c_init(i2c_default, 100 * 1000);
+    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
+    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+
+    // configure BMP280
+    bmp280_init();
+
+    // retrieve fixed compensation params
+    struct bmp280_calib_param *params;
+    params = (struct bmp280_calib_param*)malloc(sizeof(struct bmp280_calib_param));
+    bmp280_get_calib_params(&params);
+
+    int32_t raw_temperature;
+    int32_t raw_pressure;
+
+    sleep_ms(250); // sleep so that data polling and register update don't collide
 
     // endless
     while (true) 
     {
 
-        // BME280
-        dev.intf_ptr = &dev_addr;
-        dev.intf = BME280_I2C_INTF;
-        dev.read = user_i2c_read;
-        dev.write = user_i2c_write;
-        dev.delay_us = user_delay_ms;
-        rslt = bme280_init(&dev);
-
-        
         // DS18B20
         one_wire.single_device_read_rom(address);
         printf("Device Address: %02x%02x%02x%02x%02x%02x%02x%02x\n", address.rom[0], address.rom[1], address.rom[2], address.rom[3], address.rom[4], address.rom[5], address.rom[6], address.rom[7]);
@@ -208,8 +116,75 @@ int main()
         printf("Humidity = %.1f%%, Temperature = %.1fC (%.1fF)\n",
                 reading.humidity, reading.temp_celsius, fahrenheit);
         */
+
+
+        bmp280_read_raw(&raw_temperature, &raw_pressure);
+        int32_t temperature = bmp280_convert_temp(raw_temperature, &params);
+        int32_t pressure = bmp280_convert_pressure(raw_pressure, raw_temperature, &params);
+        printf("Pressure = %.3f kPa\n", pressure / 1000.f);
+        printf("Temp. = %.2f C\n", temperature / 100.f);
+        // poll every 500ms
+        sleep_ms(500);
+
+
     
     }
     sleep_ms(2000);
+#endif
     return 0;
 }
+
+
+/*
+
+
+int main() 
+{
+    stdio_init_all();
+
+#if !defined(i2c_default) || !defined(PICO_DEFAULT_I2C_SDA_PIN) || !defined(PICO_DEFAULT_I2C_SCL_PIN)
+    #warning i2c / bmp280_i2c example requires a board with I2C pins
+        puts("Default I2C pins were not defined");
+#else
+    // useful information for picotool
+    bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
+    bi_decl(bi_program_description("BMP280 I2C example for the Raspberry Pi Pico"));
+
+    printf("Hello, BMP280! Reading temperaure and pressure values from sensor...\n");
+
+    // I2C is "open drain", pull ups to keep signal high when no data is being sent
+    i2c_init(i2c_default, 100 * 1000);
+    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
+    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+
+    // configure BMP280
+    bmp280_init();
+
+    // retrieve fixed compensation params
+    struct bmp280_calib_param params;
+    bmp280_get_calib_params(&params);
+
+    int32_t raw_temperature;
+    int32_t raw_pressure;
+
+    sleep_ms(250); // sleep so that data polling and register update don't collide
+    
+    while (1) 
+    {
+        bmp280_read_raw(&raw_temperature, &raw_pressure);
+        int32_t temperature = bmp280_convert_temp(raw_temperature, &params);
+        int32_t pressure = bmp280_convert_pressure(raw_pressure, raw_temperature, &params);
+        printf("Pressure = %.3f kPa\n", pressure / 1000.f);
+        printf("Temp. = %.2f C\n", temperature / 100.f);
+        // poll every 500ms
+        sleep_ms(500);
+    }
+
+#endif
+    return 0;
+}
+
+
+*/
